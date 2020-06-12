@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 
-from pprint import pprint
-import argparse
-from datetime import date
 import time
+import argparse
+from pprint import pprint
+from datetime import date
 
 from googleapiclient import discovery
 from oauth2client.client import GoogleCredentials
@@ -11,7 +11,7 @@ from oauth2client.client import GoogleCredentials
 
 def get_args():
     parser = argparse.ArgumentParser(description="Disk snapshotter")
-    parser.add_argument('--project', '-p',required=True, help='GCP project id')
+    parser.add_argument('--project', '-p', required=True, help='GCP project id')
     args = parser.parse_args()
     return args.project
 
@@ -31,14 +31,14 @@ def wait_for_operation(compute, project, zone, operation):
 
         time.sleep(1)
 
-if __name__ == '__main__':
-    disk_list = []
+def build_compute_client():
     credentials = GoogleCredentials.get_application_default()
-    service = discovery.build('compute', 'v1', credentials=credentials)
-    project_id = get_args()
-    zone = 'us-central1-a'
-    request = service.disks().list(project=project_id, zone=zone)
-    print(f'fetching disks in project: {project_id}')
+    return discovery.build('compute', 'v1', credentials=credentials)
+    
+def get_disks(client, project, zone):
+    disk_list = []
+    request = client.disks().list(project=project, zone=zone)
+    print(f'fetching disks in project: {project}')
     while request is not None:
         response = request.execute()
 
@@ -46,21 +46,32 @@ if __name__ == '__main__':
             disk_name = disk['name']
             if not disk_name.startswith('gke-') and 'tester' not in disk_name:
                 disk_list.append(disk_name)
-        request = service.disks().list_next(previous_request=request, previous_response=response)
+        request = client.disks().list_next(previous_request=request, previous_response=response)
     
-    print('Found disks:')
-    print(disk_list)
+    return disk_list
 
+def snapshot_disks(client, project, zone, disk_list):
     current_date = date.today()
     for disk in disk_list:
         print(f'Snapshotting {disk}...')
         snapshot_body = {
             'name': f'{disk}-{current_date}'
         }
-        request = service.disks().createSnapshot(project=project_id, zone=zone, disk=disk, body=snapshot_body)
+        request = client.disks().createSnapshot(project=project, zone=zone, disk=disk, body=snapshot_body)
         response = request.execute()
-        wait_for_operation(service, project_id, zone, response['name'])
+        wait_for_operation(client, project, zone, response['name'])
         print(f'Snaphot of disk: {disk} complete')
 
     print('Snapshots complete!')
+
+def main():
+    compute = build_compute_client()
+    project_id = get_args()
+    zone = 'us-central1-a'
+    disk_list = get_disks(compute, project_id, zone)
+    snapshot_disks(compute, project_id, zone, disk_list)
+
+if __name__ == '__main__':
+    main()
+    
 
