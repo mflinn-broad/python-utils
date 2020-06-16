@@ -42,7 +42,8 @@ def get_disks_from_instance(client, instance_name, project):
     log(f'retrieving disks for instance: {instance_name}')
     for disk in response['disks']:
         disk_name = (disk['source'].rsplit('/', 1))[-1]
-        instance_disks.append(disk_name)
+        device_name = disk['deviceName']
+        instance_disks.append((disk_name, device_name))
     log(f'found disks: {instance_disks}')
     return instance_disks
 
@@ -64,9 +65,9 @@ def get_snapshots_by_disk(client, disk_name, project):
 def get_instance_snapshots(client, instance, project):
     current_disks = get_disks_from_instance(client, instance, project)
     disk_snapshots = []
-    for disk in current_disks:
-        disk_snapshots.append(get_snapshots_by_disk(client, disk, project))
-    log(f'found snapshots: {disk_snapshots} for instance {instance}')
+    for disk, device in current_disks:
+        disk_snapshots.append((get_snapshots_by_disk(client, disk, project), disk == instance))
+    log(f'found snapshots: {[snapshot[0] for snapshot in disk_snapshots]} for instance {instance}')
     return disk_snapshots
 
 def build_disk_from_snap(client, snapshot, project):
@@ -98,22 +99,21 @@ def instance_start(client, instance, project):
 
 def detach_disks(client, instance, project):
     disks = get_disks_from_instance(client, instance, project)
-    for disk in disks:
-        detach_disk(client, instance, disk, project)
+    for disk, device in disks:
+        detach_disk(client, instance, disk, device, project)
 
-def detach_disk(client, instance, disk, project):
+def detach_disk(client, instance, disk, device, project):
     log(f'detaching disk: {disk} from instance: {instance}')
-    request = client.instances().detachDisk(project=project, zone='us-central1-a', instance=instance, deviceName=disk)
+    request = client.instances().detachDisk(project=project, zone='us-central1-a', instance=instance, deviceName=device)
     response = request.execute()
     wait_for_operation(client, project, 'us-central1-a', response['name'])
     log(f' Successfully detached {disk} from {instance}')
 
-def attach_disk(client, instance, disk, project):
-    is_boot = (disk == instance)
+def attach_disk(client, instance, disk, is_boot, project):
     log(f'attaching disk: {disk} to instance {instance}')
     req_body = {
         'source': f'https://www.googleapis.com/compute/v1/projects/{project}/zones/us-central1-a/disks/{disk}',
-        'boot': True if is_boot else False
+        'boot': is_boot
     }
     request = client.instances().attachDisk(project=project, zone='us-central1-a', instance=instance, body = req_body)
     response = request.execute()
@@ -121,8 +121,8 @@ def attach_disk(client, instance, disk, project):
     log(f'successfully attached disk {disk} to instance {instance}')
 
 def attach_disks(client, instance, disk_list, project):
-    for disk in disk_list:
-        attach_disk(client, instance, disk, project)
+    for disk, is_boot in disk_list:
+        attach_disk(client, instance, disk, is_boot, project)
 
 # Google oauth library seems to have a conflict with logging module, quick workaround
 def log(message):
@@ -134,8 +134,8 @@ def main():
     compute = build_compute_client()
     snapshots = get_instance_snapshots(compute, args.instance, args.project)    
     restored_disks = []
-    for snapshot in snapshots:
-        restored_disks.append(build_disk_from_snap(compute, snapshot, args.project))
+    for snapshot, is_boot in snapshots:
+        restored_disks.append((build_disk_from_snap(compute, snapshot, args.project), is_boot))
     instance_stop(compute, args.instance, args.project)
     detach_disks(compute, args.instance, args.project)
     attach_disks(compute, args.instance, restored_disks, args.project)
