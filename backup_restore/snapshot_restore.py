@@ -109,10 +109,11 @@ def detach_disk(client, instance, disk, project):
     log(f' Successfully detached {disk} from {instance}')
 
 def attach_disk(client, instance, disk, project):
+    is_boot = (disk == instance)
     log(f'attaching disk: {disk} to instance {instance}')
     req_body = {
         'source': f'https://www.googleapis.com/compute/v1/projects/{project}/zones/us-central1-a/disks/{disk}',
-        'boot': True
+        'boot': True if is_boot else False
     }
     request = client.instances().attachDisk(project=project, zone='us-central1-a', instance=instance, body = req_body)
     response = request.execute()
