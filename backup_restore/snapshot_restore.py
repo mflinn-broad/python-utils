@@ -70,11 +70,12 @@ def get_instance_snapshots(client, instance, project):
     log(f'found snapshots: {[snapshot[0] for snapshot in disk_snapshots]} for instance {instance}')
     return disk_snapshots
 
-def build_disk_from_snap(client, snapshot, project):
+def build_disk_from_snap(client, snapshot, is_boot, project):
     disk_name = f'{snapshot}-restore-{datetime.date.today()}'
     req_body = {
         'name': disk_name,
-        'sourceSnapshot': f'https://www.googleapis.com/compute/v1/projects/{project}/global/snapshots/{snapshot}' 
+        'sourceSnapshot': f'https://www.googleapis.com/compute/v1/projects/{project}/global/snapshots/{snapshot}',
+        'type': f'https://www.googleapis.com/compute/v1/projects/{project}/zones/us-central1-a/diskTypes/{"pd-standard" if is_boot else "pd-ssd"}' 
     }
     log(f'Building restore disk from snapshot: {snapshot}...')
     request = client.disks().insert(project=project, zone='us-central1-a', body=req_body)
@@ -135,7 +136,7 @@ def main():
     snapshots = get_instance_snapshots(compute, args.instance, args.project)    
     restored_disks = []
     for snapshot, is_boot in snapshots:
-        restored_disks.append((build_disk_from_snap(compute, snapshot, args.project), is_boot))
+        restored_disks.append((build_disk_from_snap(compute, snapshot, is_boot, args.project), is_boot))
     instance_stop(compute, args.instance, args.project)
     detach_disks(compute, args.instance, args.project)
     attach_disks(compute, args.instance, restored_disks, args.project)
