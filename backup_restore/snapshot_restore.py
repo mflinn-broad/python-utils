@@ -50,6 +50,7 @@ def get_disks_from_instance(client, instance_name, project):
 def get_snapshots_by_disk(client, disk_name, project):
     log(f'retrieving most recent snapshot of disk: {disk_name}')
     full_disk_name = f'https://www.googleapis.com/compute/v1/projects/{project}/zones/us-central1-a/disks/{disk_name}'
+    disk_snapshots = []
     request = client.snapshots().list(
         project=project,
     )
@@ -59,8 +60,10 @@ def get_snapshots_by_disk(client, disk_name, project):
             # Return most recent snapshort of desired disk
             if (snapshot['sourceDisk'] == full_disk_name):
                 log(f"found snapshot {snapshot['name']}")
-                return snapshot['name']
+                disk_snapshots.append((snapshot['name'], snapshot['creationTimestamp']))
         request = client.snapshots().list_next(previous_request=request, previous_response=response)
+    disk_snapshots.sort(key=lambda x: x[1], reverse=True)
+    return disk_snapshots[0][0]
 
 def get_instance_snapshots(client, instance, project):
     current_disks = get_disks_from_instance(client, instance, project)
@@ -133,7 +136,7 @@ def main():
     args = get_args()
     log("Connecting to Google Cloud...")
     compute = build_compute_client()
-    snapshots = get_instance_snapshots(compute, args.instance, args.project)    
+    snapshots = get_instance_snapshots(compute, args.instance, args.project)  
     restored_disks = []
     for snapshot, is_boot in snapshots:
         restored_disks.append((build_disk_from_snap(compute, snapshot, is_boot, args.project), is_boot))
