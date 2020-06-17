@@ -74,9 +74,12 @@ def get_instance_snapshots(client, instance, project):
     return disk_snapshots
 
 def build_disk_from_snap(client, snapshot, is_boot, project):
-    disk_name = f'{snapshot}-restore-{datetime.date.today()}'
+    disk_name = (f'{snapshot}-restore-{datetime.date.today()}')[:62] # Truncate to 62 chars for google api limits
+    # when truncating last char must be alpha-numeric
+    if disk_name[-1] == '-':
+        disk_name = disk_name[:-1]
     req_body = {
-        'name': disk_name,
+        'name': disk_name, 
         'sourceSnapshot': f'https://www.googleapis.com/compute/v1/projects/{project}/global/snapshots/{snapshot}',
         'type': f'https://www.googleapis.com/compute/v1/projects/{project}/zones/us-central1-a/diskTypes/{"pd-standard" if is_boot else "pd-ssd"}' 
     }
